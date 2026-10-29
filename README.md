@@ -35,7 +35,7 @@ This project combines Android development, backend engineering, audio streaming,
 | Personal Library | Save and manage favorite songs. |
 | Offline Listening | Download supported tracks where legally permitted. |
 | Custom Themes | Customize the application's accent colors. |
-| Audio Caching | Reduce repeated processing on the backend. |
+| Audio Caching | Cache audio data to reduce repeated processing and improve performance. |
 | Real-Time Communication | SignalR support for communication between connected clients. |
 | Self-Hosting | Run the backend on my own home server. |
 
@@ -100,7 +100,7 @@ The `Config` object in `Model.kt` manages the backend URL and API key configurat
 
 ```kotlin
 object Config {
-    var baseUrl: String = "http://192.168.178.77:5080"
+    var baseUrl: String = "http://YOUR_SERVER_IP:5080"
     var secret: String = ""
 
     fun save(ctx: Context, url: String, sec: String) {
@@ -110,7 +110,7 @@ object Config {
         ctx.getSharedPreferences("pm", Context.MODE_PRIVATE)
             .edit()
             .putString("baseUrl", baseUrl)
-            .putString("secret", secret)
+            .putString("secret", sec)
             .apply()
     }
 }
@@ -171,6 +171,65 @@ fun searchServer(q: String): List<Track>? {
 
 This example demonstrates how the Android application requests search results, processes the JSON response, and creates track models for the interface.
 
+### Displaying Music Search Results
+
+Jetpack Compose allows music search results to be displayed through reusable UI components.
+
+```kotlin
+@Composable
+fun TrackItem(
+    track: Track,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = track.artwork,
+            contentDescription = "Album artwork for ${track.title}",
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(8.dp)),
+            contentScale = ContentScale.Crop
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Text(
+                text = track.artist,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Icon(
+            imageVector = Icons.Default.PlayArrow,
+            contentDescription = "Play ${track.title}"
+        )
+    }
+}
+```
+
+This component displays each track with its artwork, title, artist, and a play icon. The `onClick` callback allows the parent screen to connect the component to the application's existing playback functionality.
+
+The example assumes the project uses Coil for `AsyncImage` and Material icons.
+
 ---
 
 ## .NET Backend
@@ -187,9 +246,102 @@ The backend uses C# and ASP.NET Core, with separate files for HTTP endpoints, mi
 | `LikedSongEndpoints.cs` | Managing favorite songs. |
 | `PlaybackEndpoints.cs` | Playback state management. |
 
+### Health Check Endpoint
+
+A health endpoint provides a simple way to check whether the API is responding.
+
+```csharp
+app.MapGet("/api/health", () =>
+    Results.Ok(new
+    {
+        status = "healthy",
+        service = "Personal Music API"
+    }));
+```
+
+This endpoint returns a JSON response indicating that the service is available.
+
+### Music Search Endpoint
+
+The search endpoint accepts a query from the Android application and passes it to the music search service.
+
+```csharp
+app.MapGet("/api/search", async (
+    string query,
+    YouTubeService musicService) =>
+{
+    if (string.IsNullOrWhiteSpace(query))
+    {
+        return Results.BadRequest(new
+        {
+            error = "A search query is required."
+        });
+    }
+
+    var tracks = await musicService.SearchAsync(query);
+
+    return Results.Ok(new { tracks });
+});
+```
+
+This illustrates how an endpoint can validate a search query, delegate the work to a service, and return the results as JSON.
+
+The method name and return type should match the actual implementation of `YouTubeService.cs`.
+
+### Saving Favorite Songs
+
+The database layer handles persistent storage, allowing favorite songs to remain available between application sessions.
+
+```csharp
+app.MapPost("/api/liked-songs", async (
+    Track track,
+    MusicDatabase database) =>
+{
+    await database.AddLikedSongAsync(track);
+
+    return Results.Ok(new
+    {
+        message = "Song saved successfully."
+    });
+});
+```
+
+This example illustrates how an endpoint can accept track data and delegate the database operation to `MusicDatabase`.
+
+The database method and request model should match your existing implementation.
+
 ### API Key Middleware
 
 `ApiKeyMiddleware.cs` centralizes API key validation in the HTTP request pipeline, keeping authentication separate from individual endpoint handlers.
+
+```csharp
+public async Task InvokeAsync(HttpContext context)
+{
+    var providedKey = context.Request
+        .Headers["X-API-Key"]
+        .FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(providedKey) ||
+        providedKey != _configuredApiKey)
+    {
+        context.Response.StatusCode =
+            StatusCodes.Status401Unauthorized;
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = "Unauthorized"
+        });
+
+        return;
+    }
+
+    await _next(context);
+}
+```
+
+This example illustrates the validation logic. It assumes `_configuredApiKey` and `_next` are initialized through the middleware constructor.
+
+In a production deployment, protect the configured key, use HTTPS over untrusted networks, and ensure public endpoints are handled according to your authentication requirements.
 
 ### Services and Database
 
@@ -200,6 +352,8 @@ The backend uses C# and ASP.NET Core, with separate files for HTTP endpoints, mi
 | `MusicDatabase.cs` | Database operations. |
 | SQLite and Dapper | Persistent storage and database access. |
 | `MusicHub.cs` | SignalR real-time communication. |
+
+The service layer separates music-related operations from HTTP request handling, while SQLite provides lightweight persistent storage for supported application data.
 
 ---
 
@@ -216,3 +370,11 @@ This lightweight setup keeps the infrastructure simple, affordable, and under my
 *Proxmox hosting the Personal Music App backend.*
 
 </div>
+
+---
+
+## Project Goal
+
+The goal wasn't simply to recreate Spotify it was to build a music application I could customize, understand, and host myself.
+
+*Music discovery, streaming, and downloads must comply with the relevant service terms and applicable copyright law.*
