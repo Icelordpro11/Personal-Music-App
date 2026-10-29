@@ -1,146 +1,218 @@
-## 💻 Code Examples
+<div align="center">
 
-The Personal Music App uses a modular backend architecture built with **ASP.NET Core and C#**. The API is separated into endpoints, middleware, services, models, and a SignalR hub to keep the code organized and maintainable.
+# 🎵 Personal Music App
 
-### 1. HTTP API Endpoints
+**My Music. My Server. My Rules.**
 
-The backend uses ASP.NET Core HTTP endpoints to handle requests from the Android application. These endpoints separate API functionality into individual files, making the project easier to maintain and extend.
+A personal music application built with Android Studio and .NET 8.
 
-**Example endpoint structure:**
+<img src="Docs/Screenshot 2026-10-29 050943.png" alt="Personal Music App" width="280"/>
 
-```csharp
-app.MapGet("/api/ping", () =>
-{
-    return Results.Ok(new
-    {
-        status = "online"
-    });
-});
+**Kotlin · C# · ASP.NET Core · SQLite**
+
+</div>
+
+---
+
+## Why I Built It
+
+I got tired of Spotify's advertisements and limitations, so I decided to build my own music application that gives me more control over how I discover and listen to music.
+
+I wanted an Android app where I could search for music through YouTube, stream tracks, save favorites, download supported music for offline listening, and customize the interface to my preferences.
+
+I also wanted to understand how a complete application works behind the scenes, so I developed my own C# .NET 8 backend and connected it to the Android app using HTTP requests.
+
+To keep costs low and maintain control over my infrastructure, I host the backend in a Proxmox LXC container running Debian 12, dedicated to my .NET API and SQLite database.
+
+This project combines Android development, backend engineering, audio streaming, and self-hosting into one personal project that I can continuously improve and customize.
+
+## Features
+
+| Feature | Description |
+|---|---|
+| Music Discovery | Search for songs and artists. |
+| Audio Streaming | Listen to supported tracks through the application. |
+| Personal Library | Save and manage favorite songs. |
+| Offline Listening | Download supported tracks where legally permitted. |
+| Custom Themes | Customize the application's accent colors. |
+| Audio Caching | Reduce repeated processing on the backend. |
+| Real-Time Communication | SignalR support for communication between connected clients. |
+| Self-Hosting | Run the backend on my own home server. |
+
+---
+
+## Architecture
+
+The project consists of two main components: an Android application and a .NET backend API.
+
+```text
+┌──────────────────────────────────┐
+│        Android Application       │
+│                                  │
+│  Kotlin + Jetpack Compose        │
+│                                  │
+│  Home · Search · Discover        │
+│  Library · Player · Settings     │
+└────────────────┬─────────────────┘
+                 │
+                 │ HTTP / API Requests
+                 ▼
+┌──────────────────────────────────┐
+│          .NET 8 Backend          │
+│          ASP.NET Core            │
+│                                  │
+│  Search · Audio · Playback       │
+│  Liked Songs · API Middleware    │
+└────────┬─────────────┬───────────┘
+         │             │
+         ▼             ▼
+┌────────────────┐  ┌──────────────┐
+│    Services    │  │    SQLite    │
+│                │  │              │
+│ YouTube Search │  │ Liked Songs  │
+│ Audio Caching  │  │ Playback Data│
+└────────────────┘  └──────────────┘
+         │
+         ▼
+┌──────────────────────────────────┐
+│          Proxmox Server          │
+│                                  │
+│  Debian 12 · LXC Container       │
+│  .NET API · SQLite               │
+└──────────────────────────────────┘
 ```
 
-This example illustrates how the API can expose a simple health-check endpoint. The Android application or another client can use it to check whether the server is reachable.
+## Android Application
 
-**Endpoint organization:**
+Built with Kotlin, Android Studio, and Jetpack Compose, the Android application provides the interface for discovering music and managing a personal library.
 
 | File | Responsibility |
 |---|---|
-| `AudioEndpoints.cs` | Audio streaming and audio-related requests |
-| `HealthEndpoints.cs` | API health checks |
-| `LikedSongEndpoints.cs` | Managing liked songs |
-| `PlaybackEndpoints.cs` | Reading and updating playback state |
-| `SearchEndpoints.cs` | Searching for music |
+| `MainActivity.kt` | Main activity and application entry point. |
+| `Screens.kt` | Home, search, discover, library, artist, and settings screens. |
+| `Audio.kt` | Audio and playback functionality. |
+| `Model.kt` | Track models, server configuration, networking helpers, and shared utilities. |
+| `ui/theme/` | Application theme resources. |
 
-### 2. API Key Middleware
+### Connecting to My Server
 
-The backend includes an `ApiKeyMiddleware.cs` file for handling API key authentication.
+The `Config` object in `Model.kt` manages the backend URL and API key configuration.
 
-Middleware provides a centralized place to inspect incoming HTTP requests before they reach the relevant endpoints.
+```kotlin
+object Config {
+    var baseUrl: String = "http://192.168.178.77:5080"
+    var secret: String = ""
 
-```csharp
-public async Task InvokeAsync(HttpContext context)
-{
-    // Validate the request before continuing.
-    // Requests that fail authentication can be rejected here.
+    fun save(ctx: Context, url: String, sec: String) {
+        baseUrl = url.trim().trimEnd('/')
+        secret = sec.trim()
 
-    await _next(context);
-}
-```
-
-This example illustrates the middleware pipeline. The actual implementation should validate the configured API key and return an unauthorized response when a protected request does not provide valid credentials.
-
-Keeping authentication logic separate from endpoint handlers makes the API easier to maintain.
-
-### 3. Playback State Management
-
-The `PlaybackEndpoints.cs` file handles playback-related API requests, while `PlaybackState.cs` represents the playback state.
-
-Separating the model from the endpoint logic makes it easier to extend playback functionality without placing all the application logic in one file.
-
-**Example playback model:**
-
-```csharp
-public sealed class PlaybackState
-{
-    public string? TrackId { get; set; }
-
-    public double Position { get; set; }
-
-    public bool IsPlaying { get; set; }
-}
-```
-
-This simplified model illustrates the type of information a music application may need to represent:
-
-- The currently selected track.
-- The current playback position.
-- Whether playback is active.
-
-The exact properties should match the implementation in `Models/PlaybackState.cs`.
-
-### 4. Real-Time Communication with SignalR
-
-The `MusicHub.cs` file provides a SignalR hub for real-time communication between connected clients.
-
-SignalR can be used to distribute playback updates without requiring clients to repeatedly poll the server.
-
-**Example hub:**
-
-```csharp
-public sealed class MusicHub : Hub
-{
-    public async Task SendPlaybackUpdate(object playbackState)
-    {
-        await Clients.Others.SendAsync(
-            "PlaybackUpdated",
-            playbackState);
+        ctx.getSharedPreferences("pm", Context.MODE_PRIVATE)
+            .edit()
+            .putString("baseUrl", baseUrl)
+            .putString("secret", secret)
+            .apply()
     }
 }
 ```
 
-This simplified example demonstrates how a hub can broadcast playback updates to other connected clients. The actual hub methods and event names should match the implementation in `Hubs/MusicHub.cs`.
+This allows the application to save its server settings locally, making it possible to configure the backend without changing the source code.
 
-### 5. Music Search and Audio Services
+### Searching for Music
 
-The backend separates external music search and audio processing into service classes.
+The Android client sends HTTP requests to the backend and converts the JSON response into Kotlin `Track` objects.
+
+```kotlin
+fun searchServer(q: String): List<Track>? {
+    return try {
+        val url = Config.baseUrl +
+            "/api/search?query=" +
+            URLEncoder.encode(q, "UTF-8")
+
+        val connection = apiGet(url)
+        val response = connection.inputStream
+            .bufferedReader()
+            .use { it.readText() }
+
+        val tracks = JSONObject(response)
+            .getJSONArray("tracks")
+
+        val results = ArrayList<Track>()
+
+        for (i in 0 until tracks.length()) {
+            val track = tracks.getJSONObject(i)
+
+            val id = track.optString("id")
+            val title = track.optString("title")
+            val stream = track.optString("streamUrl")
+
+            if (id.isEmpty() || title.isEmpty() || stream.isEmpty()) {
+                continue
+            }
+
+            results.add(
+                Track(
+                    id,
+                    title,
+                    track.optString("artist"),
+                    track.optString("artwork"),
+                    stream,
+                    track.optString("source")
+                )
+            )
+        }
+
+        results
+    } catch (e: Exception) {
+        null
+    }
+}
+```
+
+This example demonstrates how the Android application requests search results, processes the JSON response, and creates track models for the interface.
+
+---
+
+## .NET Backend
+
+The backend uses C# and ASP.NET Core, with separate files for HTTP endpoints, middleware, services, and database operations.
+
+### HTTP Endpoints
 
 | File | Responsibility |
 |---|---|
-| `YouTubeService.cs` | Encapsulates YouTube-related search and media operations |
-| `AudioCacheService.cs` | Manages cached audio data |
-| `MusicDatabase.cs` | Handles database operations |
-| `TrackSearchResult.cs` | Represents a music search result |
+| `HealthEndpoints.cs` | Server health checks. |
+| `SearchEndpoints.cs` | Music search requests. |
+| `AudioEndpoints.cs` | Audio-related requests and streaming. |
+| `LikedSongEndpoints.cs` | Managing favorite songs. |
+| `PlaybackEndpoints.cs` | Playback state management. |
 
-This separation keeps endpoint handlers focused on HTTP requests while services manage the underlying operations.
+### API Key Middleware
 
-### 6. Project Architecture
+`ApiKeyMiddleware.cs` centralizes API key validation in the HTTP request pipeline, keeping authentication separate from individual endpoint handlers.
 
-The backend follows a modular structure:
+### Services and Database
 
-```text
-PersonalMusicApi/
-├── Data/
-│   └── MusicDatabase.cs
-├── Endpoints/
-│   ├── AudioEndpoints.cs
-│   ├── HealthEndpoints.cs
-│   ├── LikedSongEndpoints.cs
-│   ├── PlaybackEndpoints.cs
-│   └── SearchEndpoints.cs
-├── Hubs/
-│   └── MusicHub.cs
-├── Middleware/
-│   └── ApiKeyMiddleware.cs
-├── Models/
-│   ├── LikedSong.cs
-│   ├── PlaybackState.cs
-│   └── TrackSearchResult.cs
-├── Services/
-│   ├── AudioCacheService.cs
-│   └── YouTubeService.cs
-├── Program.cs
-└── PersonalMusicApi.csproj
-```
+| Component | Responsibility |
+|---|---|
+| `YouTubeService.cs` | YouTube-related search and media operations. |
+| `AudioCacheService.cs` | Managing cached audio data. |
+| `MusicDatabase.cs` | Database operations. |
+| SQLite and Dapper | Persistent storage and database access. |
+| `MusicHub.cs` | SignalR real-time communication. |
 
-This organization separates responsibilities and makes individual components easier to understand, test, and extend.
+---
 
-**Note:** The code snippets above are illustrative examples based on the project structure, not verified copies of your implementation. Replace them with the corresponding code from your actual files before presenting them as implementation examples.
+## Self-Hosted Infrastructure
+
+I host my backend inside a **Proxmox LXC container running Debian 12**, dedicated exclusively to running my C# .NET API and SQLite database.
+
+This lightweight setup keeps the infrastructure simple, affordable, and under my control.
+
+<div align="center">
+
+<img src="Docs/proxmox-screenshot.png" alt="Proxmox server running the Personal Music App backend" width="800"/>
+
+*Proxmox hosting the Personal Music App backend.*
+
+</div>
